@@ -10,6 +10,8 @@
 #include "board_settings.h"
 #include "hw/encoder.h"
 
+#if ANTI_COGGING
+
 namespace Cogging {
 namespace {
 
@@ -650,3 +652,43 @@ void serviceDump(Stream &out) {
 }
 
 } // namespace Cogging
+
+#else // ANTI_COGGING == 0: stubs (see cogging.h)
+
+namespace Cogging {
+
+void begin() { }
+bool startCalibration(bool, float, float, float) { return false; }
+void abort(Failure) { }
+void clear() { }
+void revert() { }
+bool calibrating() { return false; }
+void noteHostCurrent(float) { }
+float update(float hostCurrent, uint8_t) { return hostCurrent; }
+float lastCompensation() { return 0.0f; }
+State state() { return State::Idle; }
+Failure failure() { return Failure::None; }
+uint8_t progress() { return 0; }
+bool tableValid() { return false; }
+bool tableUnsaved() { return false; }
+bool tableMatchesMotor() { return false; }
+bool tableRefined() { return false; }
+float tableAmplitude() { return 0.0f; }
+float tableFriction() { return 0.0f; }
+uint8_t tableCoverage() { return 0; }
+uint8_t tableQuality() { return 0; }
+float lastMaxTrackingError() { return 0.0f; }
+float lastFilteredNoise() { return 0.0f; }
+float tableScale() { return 0.0f; }
+int8_t tableCount(int) { return 0; }
+// Nothing written: the page buffer (filled from flash by the save) keeps any
+// table that's already stored.
+void writeToEepromBuffer() { }
+bool verifyEepromBuffer() { return true; }
+void printStatus(Stream &out) { out.println("Anti-cogging: not in this build (built with -D ANTI_COGGING=0)"); }
+void startDump() { }
+void serviceDump(Stream &) { }
+
+} // namespace Cogging
+
+#endif // ANTI_COGGING

@@ -292,6 +292,7 @@ static void handleSetParam(const CANFDMessage &rxMsg) {
         }
         // Anti-cogging on/off: pending (kept by CMD_SAVE) and applied at once.
         case PARAM_COG_COMP: {
+            if (!Cogging::kBuilt) { replySetParam(param, CONFIG_ERR_UNKNOWN, 0); return; }
             const long m = lroundf(v);
             if (m < 0 || m > 2) { replySetParam(param, CONFIG_ERR_BAD_VALUE, p.cogComp); return; }
             p.cogComp = (uint8_t)m;
@@ -372,6 +373,11 @@ static uint8_t clampUnits(float v, float unit) {
 }
 
 static void handleCogging(const CANFDMessage &rxMsg) {
+    if (!Cogging::kBuilt) { // built with -D ANTI_COGGING=0: as for an unknown command
+        const uint8_t nack[3] = { CMD_NACK, CMD_COGGING, CONFIG_ERR_UNKNOWN };
+        sendFrame(nack, sizeof(nack), telemetryCanId());
+        return;
+    }
     const uint8_t op = rxMsg.len >= 2 ? rxMsg.data[1] : COG_STATUS;
     uint8_t status = CONFIG_OK;
     switch (op) {

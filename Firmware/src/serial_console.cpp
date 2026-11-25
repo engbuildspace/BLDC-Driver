@@ -16,6 +16,7 @@
 #include "dfu.h"
 #include "motor_control.h"
 #include "cogging.h"
+#include "parse_float.h"
 
 static bool settingsEqual(const BoardSettings &a, const BoardSettings &b) {
     return a.nodeId == b.nodeId
@@ -213,9 +214,19 @@ static bool parseOnOff(const char *arg, bool &out) {
     return false;
 }
 
+// strtok() replacement. newlib's strtok() keeps its state in the reentrancy
+// struct and asserts on it, and assert() prints with fprintf(stderr): that
+// pulled newlib's stdio and, through the core's _write(), the whole UART HAL
+// into the image (~8 KB). strtok_r() has neither. Same use: pass the string
+// to start, nullptr to continue.
+static char *tokenState = nullptr;
+static char *nextToken(char *s, const char *delims) {
+    return strtok_r(s, delims, &tokenState);
+}
+
 static void cmdSet(char *args) {
-    char *key = strtok(args, " ");
-    char *val = strtok(nullptr, " ");
+    char *key = nextToken(args, " ");
+    char *val = nextToken(nullptr, " ");
     if (!key || !val) {
         Serial.println("usage: set node 1-15  |  set side left|right  |  set invert on|off  |  set curp|curi|curtf <value>");
         return;
@@ -224,7 +235,7 @@ static void cmdSet(char *args) {
     // Current loop: applied at once as well as pending.
     if (!strcasecmp(key, "curp") || !strcasecmp(key, "curi") || !strcasecmp(key, "curtf")) {
         char *end = nullptr;
-        const float v = strtof(val, &end);
+        const float v = parseFloat(val, &end);
         if (end == val || *end) { Serial.println("not a number"); return; }
         if (!strcasecmp(key, "curp")) {
             if (!validCurrentP(v)) { Serial.print("curp must be 0-"); Serial.println(CURRENT_LOOP_P_MAX, 0); return; }
@@ -262,7 +273,7 @@ static void cmdSet(char *args) {
 }
 
 static void cmdCal(char *args) {
-    char *sub = strtok(args, " ");
+    char *sub = nextToken(args, " ");
     BoardSettings &p = pendingSettings();
     if (sub && !strcasecmp(sub, "store")) {
         if (!motorCalibrated()) {
@@ -285,7 +296,8 @@ static void cmdCal(char *args) {
 }
 
 static void cmdCog(char *args) {
-    char *sub = strtok(args, " ");
+    if (!Cogging::kBuilt) { Cogging::printStatus(Serial); return; } // "not in this build"
+    char *sub = nextToken(args, " ");
     if (!sub) { Cogging::printStatus(Serial); return; }
     if (!strcasecmp(sub, "on") || !strcasecmp(sub, "off") || !strcasecmp(sub, "slots")) {
         pendingSettings().cogComp = !strcasecmp(sub, "on") ? COG_MODE_FULL
@@ -295,10 +307,10 @@ static void cmdCog(char *args) {
     } else if (!strcasecmp(sub, "cal") || !strcasecmp(sub, "refine")) {
         float v[3] = { 0, 0, 0 };
         for (int i = 0; i < 3; i++) {
-            char *a = strtok(nullptr, " ");
+            char *a = nextToken(nullptr, " ");
             if (!a) break;
             char *end = nullptr;
-            v[i] = strtof(a, &end);
+            v[i] = parseFloat(a, &end);
             if (end == a || *end || v[i] < 0) { Serial.println("not a number"); return; }
         }
         if (v[2] > 2.0f) { Serial.println("speed must be at most 2 rad/s"); return; }

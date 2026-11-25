@@ -31,6 +31,8 @@
 #include <SimpleFOC.h>
 #include <SimpleFOCDrivers.h>
 
+#include "parse_float.h"
+
 #include "utilities/stm32math/STM32G4CORDICTrigFunctions.h"
 
 #include "board_config.h"
@@ -633,7 +635,7 @@ static void handleCommand(char* line) {
     char* arg = strchr(line, ' ');
     if (arg) { *arg++ = '\0'; while (*arg == ' ') arg++; }
     const bool hasArg = arg && *arg;
-    const float fArg = hasArg ? strtof(arg, nullptr) : 0.0f;
+    const float fArg = hasArg ? parseFloat(arg, nullptr) : 0.0f;
 
     if (line[0] == '\0' || !strcmp(line, "x")) {
         if (mode != Mode::IDLE) stopMotor("user");

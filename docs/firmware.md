@@ -256,6 +256,14 @@ The rest of the firmware only uses the interfaces, so it never checks which boar
 
 Build flags that the STM32 core reads, rather than our code, go in `board.ini`: `USB_PRODUCT`, and on BLDC-Driver `ADC_SAMPLINGTIME`.
 
+Each `board.ini` also sets the MCU and what depends on it:
+
+- `board = genericSTM32G431CB`: the PlatformIO board, i.e. the MCU.
+- `board_upload.maximum_size`: the MCU's flash size minus the 2 KB settings page (129024 on the G431CB), so an oversized build fails at build time (see [Flash size limit](#flash-size-limit)).
+- `custom_no_i2c = yes` on boards without I2C parts.
+
+`platform` (the pinned STM32 core and toolchain) stays shared in `platformio.ini`, so every board builds with the same versions. Another MCU also needs its clock set-up (`src/clock_config.cpp`), the FDCAN driver (`lib/ACANFD_STM32_G431/`) and the HAL module flags checking.
+
 ### Variants
 
 A variant that differs in a few values, such as other shunts, another encoder or one moved pin, is a new folder whose `board_config.h` includes the base board and overrides what changes:
@@ -277,7 +285,7 @@ Its `board.ini` is a copy of the base board's, with the folder name changed. Giv
 
 1. Copy the folder of the closest board in `boards/`, or make it a variant as above.
 2. Edit `board_config.h`: `BOARD_MODEL`, `BOARD_HW_REV`, pins, parts and constants.
-3. Edit `board.ini`: rename both environments and the `-I boards/...` path, and set `USB_PRODUCT`.
+3. Edit `board.ini`: rename both environments and the `-I boards/...` path, and set `USB_PRODUCT`. For another MCU, also `board` and `board_upload.maximum_size`.
 4. If the board has a part the firmware doesn't know yet, add a file in `src/parts/` that implements the interface in `src/hw/`, guarded by a new macro (copy a similar part). If the part gives the host something new, such as an IMU, give it a capability bit in `can_protocol.h` and add it to `boardCapabilities()` in `hw/board_info.cpp`.
 5. Build the new environments, then bring the board up with its `_test` environment and the [test routines](test-routines.md).
 6. Outside the firmware, use the same folder name for the board's KiCad project (`Hardware/<name>/`), its pictures (`Images/<name>/`) and its page (`docs/boards/<name>.md`, copy an existing one). Add it to the boards table in the README.
@@ -306,7 +314,19 @@ The host tools need no changes: they show the model name and use the capability 
 
 Settings live in the **last 2 KB flash page** (0x0801F800), so the firmware image must stay below **126 KB**. The firmware checks this at boot and before every save, and prints an error if the image overlaps the settings page. The page holds the settings (bytes 0–63) and the anti-cogging table (from byte 64).
 
-`lib_archive = false` links every object file of every library, and some unused ones stay in the image because they create global objects at start-up. `scripts/skip_unused_lib_sources.py` leaves SimpleFOCDrivers' `comms/` folder out of the build (~2.9 KB). Firmware 1.7 is then about 123 KB (more with some toolchains: a macOS build came out ~0.7 KB bigger).
+`board_upload.maximum_size = 129024` (in each board's `board.ini`) makes a build that would overlap the settings page fail at build time.
+
+What keeps the image small. Firmware 1.7.2 (bldc_driver_v02, with anti-cogging) is 99,068 bytes, down from 127,692 in 1.7.1, leaving ~29 KB below the settings page:
+
+| | Saves (approx.) |
+|---|---|
+| `scripts/skip_unused_lib_sources.py` leaves SimpleFOCDrivers' `comms/` folder out of the build. `lib_archive = false` links every object file of every library, and some unused ones stay in the image because they create global objects at start-up. | 2.9 KB |
+| `custom_no_i2c = yes` (bldc_driver_v02's board.ini): the same script also leaves out the Wire library and the library sources that use it (SimpleFOC's `MagneticSensorI2C`, SimpleFOCDrivers' AS5600 and I2C settings storage). Not on boards with I2C parts (MiniFOC's INA226). | ~4.5 KB |
+| `-D HWSERIAL_NONE`: no hardware UART object (the console is USB). | ~8 KB |
+| No `PIO_FRAMEWORK_ARDUINO_NANOLIB_FLOAT_PRINTF`: nothing uses `printf` with `%f` (`Serial.print(float)` has its own code). Don't add `printf("%f")` without putting it back: it would print nothing. | ~5 KB |
+| `parseFloat()` (`include/parse_float.h`) instead of `strtof()` in the consoles: decimal numbers only, no hex floats, inf or nan. | ~5–8 KB |
+| `strtok_r()` instead of `strtok()` in the serial console. newlib's `strtok()` asserts, `assert()` prints with `fprintf(stderr)`, and that brought in stdio and, through the core's `_write()`, the UART HAL. Avoid `printf`/`puts`/`assert` for the same reason (use `Serial.print`). | 8.1 KB |
+| Optional: `-D ANTI_COGGING=0` (build_flags) leaves the anti-cogging calibration and compensation out. The CAN and USB cogging commands then answer that it isn't built (`CMD_COGGING` and `PARAM_COG_COMP` get `CONFIG_ERR_UNKNOWN`), and a table already stored on the board is kept. | ~7 KB flash, ~15 KB RAM |
 
 ## Bench-test firmware (`motor_test`)
 

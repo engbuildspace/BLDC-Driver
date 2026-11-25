@@ -41,12 +41,26 @@ class Stream;
 // fades out between COG_FADE_START and COG_FADE_END rad/s: above that the
 // cogging is too fast for the current loop to follow anyway, and the
 // wheel's inertia smooths it out.
+// Build switch: -D ANTI_COGGING=0 (build_flags) leaves the calibration and
+// compensation out (~7 KB of flash, ~15 KB of RAM). The API below stays, as
+// stubs: no table, compensation does nothing, calibrations can't start, and
+// the CAN (CMD_COGGING, PARAM_COG_COMP) and USB (`cog`) commands say it isn't
+// built. A table already stored on the board is kept (saving settings
+// leaves it alone), so it's there again after flashing a build with it.
+#ifndef ANTI_COGGING
+#define ANTI_COGGING 1
+#endif
+
 // BoardSettings::cogComp / PARAM_COG_COMP values.
 constexpr uint8_t COG_MODE_OFF   = 0;
 constexpr uint8_t COG_MODE_FULL  = 1;
 constexpr uint8_t COG_MODE_SLOTS = 2; // without harmonics 1..COG_LOW_HARMONICS per turn
 
 namespace Cogging {
+
+// False in a build with -D ANTI_COGGING=0.
+constexpr bool kBuilt = ANTI_COGGING != 0;
+
 
 enum class State : uint8_t {
     Idle     = 0, // no calibration since boot
